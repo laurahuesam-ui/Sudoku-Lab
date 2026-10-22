@@ -7,10 +7,22 @@ let selected=0,pencil=false;const clone=x=>JSON.parse(JSON.stringify(x));const c
 const save=()=>localStorage.setItem('sudokuLabV1',JSON.stringify(state));const msg=t=>{$('message').textContent=t};const name=i=>`Z${Math.floor(i/9)+1}S${i%9+1}`;
 function peers(i){let r=Math.floor(i/9),c=i%9,s=new Set();for(let k=0;k<9;k++){s.add(r*9+k);s.add(k*9+c);s.add((Math.floor(r/3)*3+Math.floor(k/3))*9+Math.floor(c/3)*3+k%3)}s.delete(i);return [...s]}
 function candidates(b,i){if(b[i])return [];let used=new Set(peers(i).map(j=>b[j]));return [1,2,3,4,5,6,7,8,9].filter(n=>!used.has(n))}
+// Remove candidates made impossible by a newly placed digit, including in its row,
+// column and block. Keep this change in the same history snapshot as the digit.
+function pruneNotes(d){
+ for(const [key,notes] of Object.entries(d.notes)){
+  const i=Number(key);
+  if(!Number.isInteger(i)||i<0||i>=81||d.values[i]){delete d.notes[key];continue}
+  const allowed=new Set(candidates(d.values,i));
+  const kept=notes.filter(n=>allowed.has(n));
+  if(kept.length)d.notes[key]=kept;
+  else delete d.notes[key];
+ }
+}
 function valid(b){return b.every((n,i)=>!n||peers(i).every(j=>b[j]!==n))}
 function solveBoard(b,limit=1){let solutions=[];if(!valid(b))return solutions;let x=b.slice();function dfs(){if(solutions.length>=limit)return;let best=-1,opts=null;for(let i=0;i<81;i++)if(!x[i]){let p=candidates(x,i);if(!p.length)return;if(!opts||p.length<opts.length){best=i;opts=p;if(p.length===1)break}}if(best<0){solutions.push(x.slice());return}for(let n of opts){x[best]=n;dfs();x[best]=0;if(solutions.length>=limit)return}}dfs();return solutions}
 function snapshot(){let d=current();d.history.push({values:d.values.slice(),notes:clone(d.notes)});d.future=[]}
-function setNumber(n){let d=current();if(state.setup){if(state.active!==null){msg('Vorgaben nur im Hauptstand bearbeiten.');return}state.givens[selected]=n;state.main.values=state.givens.slice();state.main.notes={};state.main.history=[];state.main.future=[];state.sims=[];state.active=null;save();render();return}if(state.givens[selected]){msg('Vorgegebene Zahlen sind geschützt.');return}snapshot();if(pencil){let a=d.notes[selected]||[];d.notes[selected]=a.includes(n)?a.filter(x=>x!==n):[...a,n].sort();}else{d.values[selected]=n;delete d.notes[selected];if(state.active!==null){let s=state.sims.find(x=>x.id===state.active);if(s&&!s.first&&n)s.first=`${name(selected)} = ${n}`}}save();render()}
+function setNumber(n){let d=current();if(state.setup){if(state.active!==null){msg('Vorgaben nur im Hauptstand bearbeiten.');return}state.givens[selected]=n;state.main.values=state.givens.slice();state.main.notes={};state.main.history=[];state.main.future=[];state.sims=[];state.active=null;save();render();return}if(state.givens[selected]){msg('Vorgegebene Zahlen sind geschützt.');return}snapshot();if(pencil){let a=d.notes[selected]||[];d.notes[selected]=a.includes(n)?a.filter(x=>x!==n):[...a,n].sort();}else{d.values[selected]=n;delete d.notes[selected];if(n)pruneNotes(d);if(state.active!==null){let s=state.sims.find(x=>x.id===state.active);if(s&&!s.first&&n)s.first=`${name(selected)} = ${n}`}}save();render()}
 function conflicts(b,i){return b[i]&&peers(i).some(j=>b[j]===b[i])}
 function render(){
  let d=current(),b=d.values,board=$('board');
@@ -24,7 +36,7 @@ function render(){
   const cell=board.children[i];
   cell.className='cell'+(state.givens[i]?' given':'')+(state.active!==null&&!state.givens[i]&&b[i]?' simval':'')+(i===selected?' selected':'')+(conflicts(b,i)?' conflict':'');
   if(b[i]){if(cell.textContent!==String(b[i])||cell.children.length)cell.textContent=String(b[i]);}
-  else if(d.notes[i]?.length){cell.replaceChildren();let grid=document.createElement('div');grid.className='notes';for(let n=1;n<=9;n++){let e=document.createElement('span');e.textContent=d.notes[i].includes(n)?n:'';grid.append(e)}cell.append(grid)}
+  else if(d.notes[i]?.length){cell.replaceChildren();let grid=document.createElement('div');grid.className='notes';for(let n=1;n<=9;n++){let e=document.createElement('span');const present=d.notes[i].includes(n);e.textContent=present?n:'';if(present&&!candidates(b,i).includes(n)){e.className='invalid-note';e.title=`${n} ist in ${name(i)} nicht möglich`;}grid.append(e)}cell.append(grid)}
   else if(cell.textContent||cell.children.length)cell.replaceChildren();
  }
  $('counts').innerHTML='';for(let n=1;n<=9;n++){let count=b.filter(x=>x===n).length,el=document.createElement('span');el.textContent=`${n}: ${Math.max(0,9-count)} übrig`;$('counts').append(el)}
@@ -53,4 +65,4 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{for(let id of 
 $('export').onclick=()=>{let blob=new Blob([JSON.stringify({version:1,state},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`sudoku-lab-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
 $('import').onchange=async e=>{let file=e.target.files[0];if(!file)return;try{let x=JSON.parse(await file.text());if(!x.state||!Array.isArray(x.state.givens)||x.state.givens.length!==81||!x.state.main)throw Error('Ungültiges Backup');if(!confirm('Bestehende Daten durch Backup ersetzen?'))return;state=x.state;save();render();msg('Backup importiert.')}catch(err){msg('Import fehlgeschlagen: '+err.message)}e.target.value=''};
 document.addEventListener('keydown',e=>{if(e.target.closest('input, textarea, select, [contenteditable=true]')||e.altKey||e.ctrlKey||e.metaKey){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();$('undo').click()}return;}if(/^[1-9]$/.test(e.key)){e.preventDefault();setNumber(Number(e.key));}if(e.key==='Backspace'||e.key==='Delete'||e.key==='0'){e.preventDefault();setNumber(0);}let r=Math.floor(selected/9),c=selected%9;if(e.key==='ArrowRight')selected=r*9+(c+1)%9;if(e.key==='ArrowLeft')selected=r*9+(c+8)%9;if(e.key==='ArrowDown')selected=((r+1)%9)*9+c;if(e.key==='ArrowUp')selected=((r+8)%9)*9+c;if(e.key.startsWith('Arrow')){e.preventDefault();render()}});
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=3', {updateViaCache:'none'}).catch(()=>{});render();msg(state.setup?'Trage die Vorgaben ein und beende dann den Vorgabenmodus.':'Sudoku bereit: Zahlentasten 1–9, Pfeiltasten zum Navigieren, 0/Entf zum Löschen.');
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=4', {updateViaCache:'none'}).catch(()=>{});render();msg(state.setup?'Trage die Vorgaben ein und beende dann den Vorgabenmodus.':'Sudoku bereit: Zahlentasten 1–9, Pfeiltasten zum Navigieren, 0/Entf zum Löschen.');
