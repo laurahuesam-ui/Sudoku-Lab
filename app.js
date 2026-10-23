@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id), blank=()=>Array(81).fill(0), fresh=()=>
 let state;try{state=JSON.parse(localStorage.getItem('sudokuLabV1'))}catch{}if(!state||!Array.isArray(state.givens)||state.givens.length!==81)state={givens:blank(),main:fresh(),sims:[],active:null,setup:true};
 // Migration: In v1 wurden Vorgaben gespeichert, aber während der Eingabe nicht angezeigt.
 if(state.setup){state.main.values=state.givens.slice();}
-let selected=0,pencil=false;const clone=x=>JSON.parse(JSON.stringify(x));const current=()=>state.active===null?state.main:state.sims.find(s=>s.id===state.active)?.data||state.main;
+let selected=0,pencil=false,highlightDigit=0;const clone=x=>JSON.parse(JSON.stringify(x));const current=()=>state.active===null?state.main:state.sims.find(s=>s.id===state.active)?.data||state.main;
 const save=()=>localStorage.setItem('sudokuLabV1',JSON.stringify(state));const msg=t=>{$('message').textContent=t};const name=i=>`Z${Math.floor(i/9)+1}S${i%9+1}`;
 function peers(i){let r=Math.floor(i/9),c=i%9,s=new Set();for(let k=0;k<9;k++){s.add(r*9+k);s.add(k*9+c);s.add((Math.floor(r/3)*3+Math.floor(k/3))*9+Math.floor(c/3)*3+k%3)}s.delete(i);return [...s]}
 function candidates(b,i){if(b[i])return [];let used=new Set(peers(i).map(j=>b[j]));return [1,2,3,4,5,6,7,8,9].filter(n=>!used.has(n))}
@@ -22,7 +22,7 @@ function pruneNotes(d){
 function valid(b){return b.every((n,i)=>!n||peers(i).every(j=>b[j]!==n))}
 function solveBoard(b,limit=1){let solutions=[];if(!valid(b))return solutions;let x=b.slice();function dfs(){if(solutions.length>=limit)return;let best=-1,opts=null;for(let i=0;i<81;i++)if(!x[i]){let p=candidates(x,i);if(!p.length)return;if(!opts||p.length<opts.length){best=i;opts=p;if(p.length===1)break}}if(best<0){solutions.push(x.slice());return}for(let n of opts){x[best]=n;dfs();x[best]=0;if(solutions.length>=limit)return}}dfs();return solutions}
 function snapshot(){let d=current();d.history.push({values:d.values.slice(),notes:clone(d.notes)});d.future=[]}
-function setNumber(n){let d=current();if(state.setup){if(state.active!==null){msg('Vorgaben nur im Hauptstand bearbeiten.');return}state.givens[selected]=n;state.main.values=state.givens.slice();state.main.notes={};state.main.history=[];state.main.future=[];state.sims=[];state.active=null;save();render();return}if(state.givens[selected]){msg('Vorgegebene Zahlen sind geschützt.');return}snapshot();if(pencil){let a=d.notes[selected]||[];d.notes[selected]=a.includes(n)?a.filter(x=>x!==n):[...a,n].sort();}else{d.values[selected]=n;delete d.notes[selected];if(n)pruneNotes(d);if(state.active!==null){let s=state.sims.find(x=>x.id===state.active);if(s&&!s.first&&n)s.first=`${name(selected)} = ${n}`}}save();render()}
+function setNumber(n){if(n)highlightDigit=n;let d=current();if(state.setup){if(state.active!==null){msg('Vorgaben nur im Hauptstand bearbeiten.');return}state.givens[selected]=n;state.main.values=state.givens.slice();state.main.notes={};state.main.history=[];state.main.future=[];state.sims=[];state.active=null;save();render();return}if(state.givens[selected]){msg('Vorgegebene Zahlen sind geschützt.');return}snapshot();if(pencil){let a=d.notes[selected]||[];d.notes[selected]=a.includes(n)?a.filter(x=>x!==n):[...a,n].sort();}else{d.values[selected]=n;delete d.notes[selected];if(n)pruneNotes(d);if(state.active!==null){let s=state.sims.find(x=>x.id===state.active);if(s&&!s.first&&n)s.first=`${name(selected)} = ${n}`}}save();render()}
 function conflicts(b,i){return b[i]&&peers(i).some(j=>b[j]===b[i])}
 function render(){
  let d=current(),b=d.values,board=$('board');
@@ -30,17 +30,21 @@ function render(){
  // and lost click/focus state when entering a number rapidly.
  if(board.children.length!==81){board.replaceChildren();for(let i=0;i<81;i++){
    let cell=document.createElement('button');cell.type='button';cell.dataset.index=i;
-   cell.title=name(i);cell.addEventListener('click',()=>{selected=i;render()});board.append(cell);
+   cell.title=name(i);cell.addEventListener('click',()=>{selected=i;if(current().values[i])highlightDigit=current().values[i];render()});board.append(cell);
  }}
  for(let i=0;i<81;i++){
   const cell=board.children[i];
-  cell.className='cell'+(state.givens[i]?' given':'')+(state.active!==null&&!state.givens[i]&&b[i]?' simval':'')+(i===selected?' selected':'')+(conflicts(b,i)?' conflict':'');
+  // Digit visualization uses actual Sudoku rules, not only manually written notes.
+  const isMatch=highlightDigit>0&&b[i]===highlightDigit;
+  const isBlocked=highlightDigit>0&&!b[i]&&!candidates(b,i).includes(highlightDigit);
+  const isPossible=highlightDigit>0&&!b[i]&&!isBlocked;
+  cell.className='cell'+(state.givens[i]?' given':'')+(state.active!==null&&!state.givens[i]&&b[i]?' simval':'')+(isMatch?' digit-match':'')+(isBlocked?' digit-blocked':'')+(isPossible?' digit-possible':'')+(i===selected?' selected':'')+(conflicts(b,i)?' conflict':'');
   if(b[i]){if(cell.textContent!==String(b[i])||cell.children.length)cell.textContent=String(b[i]);}
-  else if(d.notes[i]?.length){cell.replaceChildren();let grid=document.createElement('div');grid.className='notes';for(let n=1;n<=9;n++){let e=document.createElement('span');const present=d.notes[i].includes(n);e.textContent=present?n:'';if(present&&!candidates(b,i).includes(n)){e.className='invalid-note';e.title=`${n} ist in ${name(i)} nicht möglich`;}grid.append(e)}cell.append(grid)}
+  else if(d.notes[i]?.length){cell.replaceChildren();let grid=document.createElement('div');grid.className='notes';for(let n=1;n<=9;n++){let e=document.createElement('span');const present=d.notes[i].includes(n);e.textContent=present?n:'';if(present&&!candidates(b,i).includes(n)){e.className='invalid-note';e.title=`${n} ist in ${name(i)} nicht möglich`;}else if(present&&highlightDigit===n){e.className='note-match';}grid.append(e)}cell.append(grid)}
   else if(cell.textContent||cell.children.length)cell.replaceChildren();
  }
- $('counts').innerHTML='';for(let n=1;n<=9;n++){let count=b.filter(x=>x===n).length,el=document.createElement('span');el.textContent=`${n}: ${Math.max(0,9-count)} übrig`;$('counts').append(el)}
- $('numbers').innerHTML='';for(let n=1;n<=9;n++){let el=document.createElement('button');el.type='button';el.textContent=n;el.disabled=!state.setup&&b.filter(x=>x===n).length>=9;el.onclick=()=>setNumber(n);$('numbers').append(el)}
+ $('counts').innerHTML='';for(let n=1;n<=9;n++){let count=b.filter(x=>x===n).length,el=document.createElement('span');el.textContent=`${n}: ${Math.max(0,9-count)} übrig`;el.className=highlightDigit===n?'count-highlight':'';$('counts').append(el)}
+ $('numbers').innerHTML='';for(let n=1;n<=9;n++){let el=document.createElement('button');el.type='button';el.textContent=n;el.className=highlightDigit===n?'digit-active':'';el.disabled=!state.setup&&b.filter(x=>x===n).length>=9;el.onclick=()=>setNumber(n);$('numbers').append(el)}
  $('simList').innerHTML='';for(let s of state.sims){let el=document.createElement('button');el.className='sim'+(s.id===state.active?' active':'');el.innerHTML=`${escapeHTML(s.first||'Noch keine Annahme')} <small>${escapeHTML(s.title)} · ${s.data.history.length} Schritte</small>`;el.onclick=()=>{state.active=s.id;save();render()};$('simList').append(el)}
  $('base').className=state.active===null?'active':'';$('setup').textContent=state.setup?'Vorgabenmodus beenden':'Vorgaben bearbeiten';$('pencil').textContent=`Kandidaten: ${pencil?'An':'Aus'}`;$('saveStart').disabled=state.active!==null;$('undo').disabled=!d.history.length;$('redo').disabled=!d.future.length;
 }
@@ -48,7 +52,15 @@ function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 $('setup').onclick=()=>{if(state.active!==null){msg('Zuerst Hauptstand wählen.');return}if(!state.setup&&!confirm('Vorgaben bearbeiten setzt den Lösungsfortschritt und alle Simulationen zurück. Fortfahren?'))return;state.setup=!state.setup;if(state.setup){state.givens=state.main.values.slice();state.main=fresh();state.main.values=state.givens.slice();state.sims=[]}else{state.main.values=state.givens.slice();if(!valid(state.givens)){state.setup=true;msg('Achtung: Die Vorgaben enthalten einen Widerspruch. Bitte korrigieren.')}}save();render()};
 $('saveStart').onclick=()=>{if(state.active!==null)return;if(!valid(state.main.values)){msg('Widerspruch im Sudoku – Anfangsstatus nicht gespeichert.');return}if(!confirm('Aktuelle Zahlen als neue feste Vorgaben speichern? Simulationen werden entfernt.'))return;state.givens=state.main.values.slice();state.main=fresh();state.main.values=state.givens.slice();state.sims=[];state.setup=false;save();render();msg('Anfangsstatus gespeichert.')};
 $('reset').onclick=()=>{if(!confirm('Aktuelle Ansicht auf den Anfangsstatus zurücksetzen?'))return;let d=current();snapshot();d.values=state.givens.slice();d.notes={};save();render();msg('Anfangsstatus geladen. Rückgängig ist möglich.')};
-$('newSim').onclick=()=>{if(state.setup){msg('Zuerst den Vorgabenmodus beenden.');return}let id=Date.now()+Math.random(),d=fresh();d.values=state.main.values.slice();state.sims.push({id,title:`Simulation ${state.sims.length+1}`,first:'',data:d});state.active=id;save();render();msg('Neue Simulation: Trage die erste Testzahl ein. Sie wird als Startannahme gespeichert.')};
+// A brand-new puzzle is separate from restoring this puzzle's saved givens.
+// Keep all stored data untouched until the user explicitly confirms.
+$('newPuzzle').onclick=()=>{
+ if(!confirm('Wirklich ein neues Sudoku beginnen? Das aktuelle Sudoku, alle eingetragenen Zahlen, Kandidaten, Simulationen und deren Verlauf werden gelöscht. Dieser Vorgang kann nicht rückgängig gemacht werden. Vorher bei Bedarf ein Backup exportieren.'))return;
+ state={givens:blank(),main:fresh(),sims:[],active:null,setup:true};
+ selected=0;pencil=false;highlightDigit=0;
+ save();render();msg('Neues leeres Sudoku bereit. Trage die Vorgaben ein und beende anschließend den Vorgabenmodus.');
+};
+$('newSim').onclick=()=>{if(state.setup){msg('Zuerst den Vorgabenmodus beenden.');return}let id=Date.now()+Math.random(),d=fresh();d.values=state.main.values.slice();d.notes=clone(state.main.notes||{});state.sims.push({id,title:`Simulation ${state.sims.length+1}`,first:'',data:d});state.active=id;save();render();msg('Neue Simulation: Trage die erste Testzahl ein. Sie wird als Startannahme gespeichert.')};
 $('base').onclick=()=>{state.active=null;save();render()};
 $('undo').onclick=()=>{let d=current();if(!d.history.length)return;d.future.push({values:d.values.slice(),notes:clone(d.notes)});Object.assign(d,d.history.pop());save();render()};
 $('redo').onclick=()=>{let d=current();if(!d.future.length)return;d.history.push({values:d.values.slice(),notes:clone(d.notes)});Object.assign(d,d.future.pop());save();render()};
@@ -65,4 +77,4 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{for(let id of 
 $('export').onclick=()=>{let blob=new Blob([JSON.stringify({version:1,state},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`sudoku-lab-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
 $('import').onchange=async e=>{let file=e.target.files[0];if(!file)return;try{let x=JSON.parse(await file.text());if(!x.state||!Array.isArray(x.state.givens)||x.state.givens.length!==81||!x.state.main)throw Error('Ungültiges Backup');if(!confirm('Bestehende Daten durch Backup ersetzen?'))return;state=x.state;save();render();msg('Backup importiert.')}catch(err){msg('Import fehlgeschlagen: '+err.message)}e.target.value=''};
 document.addEventListener('keydown',e=>{if(e.target.closest('input, textarea, select, [contenteditable=true]')||e.altKey||e.ctrlKey||e.metaKey){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();$('undo').click()}return;}if(/^[1-9]$/.test(e.key)){e.preventDefault();setNumber(Number(e.key));}if(e.key==='Backspace'||e.key==='Delete'||e.key==='0'){e.preventDefault();setNumber(0);}let r=Math.floor(selected/9),c=selected%9;if(e.key==='ArrowRight')selected=r*9+(c+1)%9;if(e.key==='ArrowLeft')selected=r*9+(c+8)%9;if(e.key==='ArrowDown')selected=((r+1)%9)*9+c;if(e.key==='ArrowUp')selected=((r+8)%9)*9+c;if(e.key.startsWith('Arrow')){e.preventDefault();render()}});
-if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=4', {updateViaCache:'none'}).catch(()=>{});render();msg(state.setup?'Trage die Vorgaben ein und beende dann den Vorgabenmodus.':'Sudoku bereit: Zahlentasten 1–9, Pfeiltasten zum Navigieren, 0/Entf zum Löschen.');
+if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=6', {updateViaCache:'none'}).catch(()=>{});render();msg(state.setup?'Trage die Vorgaben ein und beende dann den Vorgabenmodus.':'Sudoku bereit: Zahlentasten 1–9, Pfeiltasten zum Navigieren, 0/Entf zum Löschen.');

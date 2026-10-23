@@ -5,3 +5,23 @@
 .numbers button{flex:1 1 0;min-width:0;max-width:54px;padding:9px 3px}
 .notes .invalid-note{color:#c5192d;font-weight:900;background:#ffe1e5;border-radius:3px}
 @media(max-width:760px){.numbers{gap:4px}.numbers button{font-size:18px;min-width:0;padding:9px 0}}
+
+/* Version 5: Start a fresh puzzle, clearly separated from reload-original. */
+.new-puzzle{border-color:#a75353;color:#912c39;background:#fff5f5}.new-puzzle:hover{background:#ffe3e3}
+
+/* Version 6: selected-number map; never suppress pencil marks in simulations. */
+.cell.digit-match{background:#b7f1c7;color:#0b6030;font-weight:900}
+.cell.given.digit-match,.cell.simval.digit-match{background:#b7f1c7;color:#0b6030}
+.cell.digit-blocked{background:#f7dfe1}
+.cell.digit-possible{background:#e9f6ff}
+.cell.selected{outline:3px solid #2964ac;outline-offset:-3px;z-index:1}
+.cell.selected.digit-match{background:#88e1a5!important}
+.cell.selected.digit-blocked{background:#edc7cc!important}
+.cell.selected.digit-possible{background:#bcdcff!important}
+.numbers button.digit-active{background:#1f5d9f;color:white;border-color:#143f70}
+#counts span.count-highlight{background:#b7f1c7;color:#155932;font-weight:800}
+.notes .note-match{color:#126b37;font-weight:900;background:#b7f1c7;border-radius:3px}
+.digit-legend{width:min(100%,540px);margin:0 auto 9px;display:flex;flex-wrap:wrap;gap:9px;font-size:12px;color:#3c526a}
+.digit-legend span{display:inline-flex;align-items:center;gap:4px}
+.digit-legend i{width:13px;height:13px;display:inline-block;border:1px solid #abc;border-radius:3px}
+.digit-legend .match{background:#b7f1c7}.digit-legend .blocked{background:#f7dfe1}.digit-legend .possible{background:#e9f6ff}
